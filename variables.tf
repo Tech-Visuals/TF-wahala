@@ -16,7 +16,16 @@
  variable "vpc_cidr_block" {}
  variable "bastion_http_cidr_blocks" {}
  variable "bastion_https_cidr_blocks" {}
- variable "bastion_ami" {}
+ variable "ami" {}
  variable "project_name" {}
-
+ variable "worker_instance_type" {}
+ variable "worker_node_count" {}
+ variable "control_plane_instance_type" {}
+ variable "control_plane_count" {}
+ variable "worker-subnet-1" {}
+ variable "worker-subnet-2" {}
+ variable "control-plane-subnet-1" {}
+ variable "control-plane-subnet-2" {}
+ variable "vpc_id" {}
  
+

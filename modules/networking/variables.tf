@@ -56,5 +56,5 @@ variable "bastion_ssh_cidr_blocks" {}
 variable "bastion_http_cidr_blocks" {}
 variable "key_name" {}
 variable "bastion_instance_type" {} 
-variable "bastion_ami" {}
+variable "ami" {}
 variable "project_name" {}

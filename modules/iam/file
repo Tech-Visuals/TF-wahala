@@ -1,0 +1,5 @@
+#put this in main.tfvars
+module "iam" {
+  source = "./modules/IAM"
+}
+

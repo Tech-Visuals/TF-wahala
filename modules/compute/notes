@@ -1,0 +1,209 @@
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 3.0"
+    }
+  }
+}
+
+
+provider "aws" {
+  profile = "default"
+  region  = "us-west-1"
+}
+
+# Generate kubeadm init token
+resource "random_string" "token-id" {
+  length  = 6
+  special = false
+  upper   = false
+}
+
+resource "random_string" "token-secret" {
+  length  = 16
+  special = false
+  upper   = false
+}
+
+locals {
+  token = "${random_string.token-id.result}.${random_string.token-secret.result}"
+}
+
+# Create master node
+resource "aws_instance" "Master-Node" {
+  ami                    = var.ami
+  instance_type          = var.instance_type
+  iam_instance_profile   = var.iam_instance_profile
+  key_name               = var.key_name
+  vpc_security_group_ids = var.vpc_security_group_ids
+  source_dest_check      = "false"
+  subnet_id              = "subnet-0d8e386b"
+  user_data              = <<-EOF
+  #!/bin/bash
+  apt update -y
+  apt install docker.io -y
+  systemctl enable docker.service
+  usermod -aG docker ubuntu
+  apt install -y apt-transport-https curl
+  curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add
+  apt-add-repository "deb http://apt.kubernetes.io/ kubernetes-xenial main"
+  apt update -y
+  apt install -y kubelet kubeadm kubectl
+  sysctl -w net.ipv4.ip_forward=1
+  sed -i 's/net.ipv4.ip_forward=0/net.ipv4.ip_forward=1/Ig' /etc/sysctl.conf
+  # Ignore preflight in order to have master running on t2.micro, otherwise remove it 
+  kubeadm init --token ${local.token} \
+  --pod-network-cidr=10.244.0.0/16 \
+  --service-cidr=10.96.0.0/12 \
+  --ignore-preflight-errors=all
+  sleep 30
+  mkdir -p /home/ubuntu/.kube ~/.kube
+  cp /etc/kubernetes/admin.conf /home/ubuntu/.kube/config
+  chown ubuntu:ubuntu /home/ubuntu/.kube/config
+  export KUBECONFIG=/etc/kubernetes/admin.conf
+  kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+  # while [[ $(kubectl -n kube-system get pods -l k8s-app=kube-dns -o 'jsonpath={..status.conditions[?(@.type=="Ready")].status}') != "True" ]]; do sleep 5; done
+  EOF
+  tags = {
+    Owner      = "Engineering"
+    Stack      = "Dev"
+    Kubernetes = "Master"
+  }
+}
+
+# Create agents
+resource "aws_instance" "Agent-Node" {
+  count = var.agent_count
+
+  ami                    = var.ami
+  instance_type          = var.instance_type
+  iam_instance_profile   = var.iam_instance_profile
+  key_name               = var.key_name
+  vpc_security_group_ids = var.vpc_security_group_ids
+  source_dest_check      = "false"
+  subnet_id              = "subnet-0d8e386b"
+  user_data              = <<-EOF
+  #!/bin/bash
+  apt update -y
+  apt install docker.io -y
+  systemctl enable docker.service
+  usermod -aG docker ubuntu
+  apt install -y apt-transport-https curl
+  curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add
+  apt-add-repository "deb http://apt.kubernetes.io/ kubernetes-xenial main"
+  apt update -y
+  apt install -y kubelet kubeadm kubectl
+  sysctl -w net.ipv4.ip_forward=1
+  sed -i 's/net.ipv4.ip_forward=0/net.ipv4.ip_forward=1/Ig' /etc/sysctl.conf
+  kubeadm join ${aws_instance.Master-Node.private_ip}:6443 \
+  --token ${local.token} \
+  --discovery-token-unsafe-skip-ca-verification
+  EOF
+  tags = {
+    Owner      = "Engineering"
+    Stack      = "Dev"
+    Kubernetes = "Node"
+  }
+  depends_on = [
+    aws_instance.Master-Node
+  ]
+}
+
+output "Master-Node" {
+  value = [
+    aws_instance.Master-Node.id, 
+    aws_instance.Master-Node.private_ip, 
+    aws_instance.Master-Node.public_ip, 
+  ]
+}
+
+output "Agent-Nodes" {
+  value = {
+    for instance in aws_instance.Agent-Node :
+    instance.id => [instance.private_ip, instance.public_ip]
+  }
+}
+
+
+ variable "name" {
+  description = "Name to be used on all resources as prefix"
+  type        = string
+  default     = ""
+}
+
+variable "region" {
+  description = "region to be used on all resources"
+  type        = string
+}
+
+variable "agent_count" {
+  description = "Number of instances to launch"
+  type        = number
+  default     = "1"
+}
+
+variable "ami" {
+  description = "ID of AMI to use for the instance"
+  type        = string
+  default     = ""
+}
+
+variable "instance_type" {
+  description = "The type of instance to start"
+  type        = string
+}
+
+variable "key_name" {
+  description = "The key name to use for the instance"
+  type        = string
+  default     = ""
+}
+
+variable "vpc_security_group_ids" {
+  description = "A list of security group IDs to associate with"
+  type        = list(string)
+  default     = null
+}
+
+variable "subnet_id" {
+  description = "The VPC Subnet ID to launch in"
+  type        = string
+  default     = ""
+}
+
+variable "subnet_ids" {
+  description = "A list of VPC Subnet IDs to launch in"
+  type        = list(string)
+  default     = []
+}
+
+variable "source_dest_check" {
+  description = "Controls if traffic is routed to the instance when the destination address does not match the instance. Used for NAT or VPNs."
+  type        = bool
+  default     = true
+}
+
+variable "user_data" {
+  description = "The user data to provide when launching the instance. Do not pass gzip-compressed data via this argument; see user_data_base64 instead."
+  type        = string
+  default     = null
+}
+
+variable "user_data_base64" {
+  description = "Can be used instead of user_data to pass base64-encoded binary data directly. Use this instead of user_data whenever the value is not a valid UTF-8 string. For example, gzip-encoded user data must be base64-encoded and passed via this argument to avoid corruption."
+  type        = string
+  default     = null
+}
+
+variable "iam_instance_profile" {
+  description = "The IAM Instance Profile to launch the instance with. Specified as the name of the Instance Profile."
+  type        = string
+  default     = ""
+}
+
+variable "tags" {
+  description = "A mapping of tags to assign to the resource"
+  type        = map(string)
+  default     = {}
+}

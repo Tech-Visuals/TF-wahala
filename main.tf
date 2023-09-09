@@ -17,7 +17,25 @@ module "networking" {
   load_balancer_http_cidr = var.load_balancer_http_cidr
   load_balancer_https_cidr = var.load_balancer_https_cidr
   bastion_instance_type = var.bastion_instance_type
-  bastion_ami = var.bastion_ami
+  ami = var.ami
   project_name = var.project_name
   # Other module arguments...
+}
+
+
+module "compute" {
+  source = "./modules/compute"  
+
+  key_name = var.key_name
+  ami = var.ami
+  worker_instance_type = var.worker_instance_type
+  control-plane-subnet-1 = var.control-plane-subnet-1
+  control-plane-subnet-2 = var.control-plane-subnet-2
+  control_plane_count = var.control_plane_count
+  control_plane_instance_type = var.control_plane_instance_type
+  worker-subnet-1 = var.worker-subnet-1
+  worker-subnet-2 = var.worker-subnet-2
+  vpc_id = var.vpc_id
+
+
 }

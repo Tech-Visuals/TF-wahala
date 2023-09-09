@@ -182,7 +182,7 @@ resource "aws_subnet" "database_subnet" {
 
 # Bastion Host Configuration
 resource "aws_instance" "bastion_host" {
-  ami           = var.bastion_ami
+  ami           = var.ami
   instance_type = var.bastion_instance_type
   key_name      = var.key_name
   subnet_id     = aws_subnet.bastion_subnet.id  # Make sure to adjust the module reference
