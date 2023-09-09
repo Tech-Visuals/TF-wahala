@@ -1,0 +1,4 @@
+.terraform/
+.terraform/providers
+.terraform/modules
+.DS_Store
